@@ -14,8 +14,7 @@ if(_platform STREQUAL "WIN16")
 	add_definitions("/DCL_WIN16")
 	set(CL_WIN16 TRUE)
 	if(_quickwin)
-		add_definitions("/DCL_QUICKWIN /Mq")
-		add_link_options("/NOD")
+		add_definitions("/DCL_QUICKWIN")
 		set(CL_QUICKWIN TRUE)
 	endif()
 else()
@@ -42,15 +41,19 @@ if(_platform STREQUAL "DOS" OR _platform STREQUAL "WIN16")
 	endif()
 	
 	if(NOT DEFINED _fpuemu)
-		set(_fpuemu "AUTO")
+		set(_fpuemu "NO")
 	endif()
 
-	if(_fpuemu STREQUAL "AUTO")
+	if(_fpuemu STREQUAL "ALT")
+		# Alternate FPU package for FPU-less coprocessors
 		set(_fpuemu_name "A")
-	elseif(_fpuemu STREQUAL "NO")
+		add_compile_options("/FPa")
+	elseif(NOT _fpuemu)
 		set(_fpuemu_name "7")
-	elseif(_fpuemu STREQUAL "YES")
+		add_compile_options("/FPi87")
+	elseif(_fpuemu)
 		set(_fpuemu_name "E")
+		add_compile_options("/FPi")
 	endif()
 
 	if(_mmodel STREQUAL "SMALL")
@@ -72,16 +75,31 @@ if(_platform STREQUAL "DOS" OR _platform STREQUAL "WIN16")
 		set(_platform_name "W")
 		if(_quickwin)
 			set(_quickwin_name "Q")
+			add_compile_options("/Mq")
+		else()
+			# protected-mode Win entry/exit code (A for Application)
+			# $TODO: D for DLL
+			add_compile_options("/GA")
 		endif()
 	endif()
 
+	# set memory model
+	add_compile_options("/A${_mmodel_name}")
+
+	# compile only, don't link
+	add_compile_options("/c")
+
+	# we want to choose the LIBC variant ourselves
+	add_link_options("/NOD")
+
 	set(LIBC_LIBRARY "${_mmodel_name}${LIBC_NAME}${_fpuemu_name}${_platform_name}${_quickwin_name}")
+	list(APPEND CMAKE_C_STANDARD_LIBRARIES ${LIBC_LIBRARY})
 
 	if(CL_WIN16)
 		list(APPEND CMAKE_C_STANDARD_LIBRARIES LIBW)
 	endif()
 
-	list(APPEND CMAKE_C_STANDARD_LIBRARIES ${LIBC_LIBRARY})
+	set(CMAKE_CXX_STANDARD_LIBRARIES ${CMAKE_C_STANDARD_LIBRARIES})
 endif()
 
 if(DEFINED CL_SUBSYSTEM)
