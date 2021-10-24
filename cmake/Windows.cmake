@@ -1,0 +1,91 @@
+set(_mmodel ${CL_MMODEL})
+set(_platform ${CL_TARGET_OS})
+set(_fpuemu ${CL_FPUEMU})
+set(_quickwin ${CL_QUICKWIN})
+
+if(_platform STREQUAL "DOS")
+	add_definitions("/DCL_DOS")
+	set(CL_DOS TRUE)
+else()
+	set(CL_DOS FALSE)
+endif()
+
+if(_platform STREQUAL "WIN16")
+	add_definitions("/DCL_WIN16")
+	set(CL_WIN16 TRUE)
+	if(_quickwin)
+		add_definitions("/DCL_QUICKWIN /Mq")
+		add_link_options("/NOD")
+		set(CL_QUICKWIN TRUE)
+	endif()
+else()
+	set(CL_WIN16 FALSE)
+endif()
+
+if(_platform STREQUAL "WIN32")
+	add_definitions("/DCL_WIN32")
+	set(CL_WIN32 TRUE)
+else()
+	set(CL_WIN32 FALSE)
+endif()
+
+
+if(_platform STREQUAL "DOS" OR _platform STREQUAL "WIN16")
+	set(LIBC_NAME "LIBC")
+
+	if(NOT DEFINED _mmodel)
+		if(CL_TARGET_OS STREQUAL "WIN16")
+			set(_mmodel "LARGE")
+		else() # DOS
+			set(_mmodel "SMALL")
+		endif()
+	endif()
+	
+	if(NOT DEFINED _fpuemu)
+		set(_fpuemu "AUTO")
+	endif()
+
+	if(_fpuemu STREQUAL "AUTO")
+		set(_fpuemu_name "A")
+	elseif(_fpuemu STREQUAL "NO")
+		set(_fpuemu_name "7")
+	elseif(_fpuemu STREQUAL "YES")
+		set(_fpuemu_name "E")
+	endif()
+
+	if(_mmodel STREQUAL "SMALL")
+		set(_mmodel_name "S")
+	elseif(_mmodel STREQUAL "MEDIUM")
+		set(_mmodel_name "M")
+	elseif(_mmodel STREQUAL "LARGE")
+		set(_mmodel_name "L")
+	elseif(_mmodel STREQUAL "HUGE")
+		set(_mmodel_name "H")
+	elseif(_mmodel STREQUAL "TINY")
+		set(_mmodel_name "T")
+	elseif(_mmodel STREQUAL "COMPACT")
+		set(_mmodel_name "C")
+	endif()
+
+	if(_platform STREQUAL "DOS")
+	elseif(_platform STREQUAL "WIN16")
+		set(_platform_name "W")
+		if(_quickwin)
+			set(_quickwin_name "Q")
+		endif()
+	endif()
+
+	set(LIBC_LIBRARY "${_mmodel_name}${LIBC_NAME}${_fpuemu_name}${_platform_name}${_quickwin_name}")
+
+	if(CL_WIN16)
+		list(APPEND CMAKE_C_STANDARD_LIBRARIES LIBW)
+	endif()
+
+	list(APPEND CMAKE_C_STANDARD_LIBRARIES ${LIBC_LIBRARY})
+endif()
+
+if(DEFINED CL_SUBSYSTEM)
+	add_link_options("/subsystem:${CL_SUBSYSTEM}")
+endif()
+
+### toolchain-file related options
