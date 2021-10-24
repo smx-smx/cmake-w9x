@@ -7,3 +7,5 @@ Specifically, this makes it possible to target
 - Win16 (including QuickWin)
 - Win32 (Win9x and WinNT)
 - Win32s
+
+NOTE: only the "MinGW Makefiles" generator is supported. Sample build scripts can be found under the "samples" folder
