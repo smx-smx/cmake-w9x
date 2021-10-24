@@ -41,7 +41,7 @@ if(_platform STREQUAL "DOS" OR _platform STREQUAL "WIN16")
 	endif()
 	
 	if(NOT DEFINED _fpuemu)
-		set(_fpuemu "NO")
+		set(_fpuemu ON)
 	endif()
 
 	if(_fpuemu STREQUAL "ALT")
