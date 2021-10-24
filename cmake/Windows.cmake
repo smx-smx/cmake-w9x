@@ -93,6 +93,11 @@ if(_platform STREQUAL "DOS" OR _platform STREQUAL "WIN16")
 	add_link_options("/NOD")
 
 	set(LIBC_LIBRARY "${_mmodel_name}${LIBC_NAME}${_fpuemu_name}${_platform_name}${_quickwin_name}")
+
+	if(NOT EXISTS ${CL_ROOT}/LIB/${LIBC_LIBRARY}.LIB)
+		message(FATAL_ERROR "Invalid configuration, library ${LIBC_LIBRARY}.LIB does not exist")
+	endif()
+
 	list(APPEND CMAKE_C_STANDARD_LIBRARIES ${LIBC_LIBRARY})
 
 	if(CL_WIN16)
