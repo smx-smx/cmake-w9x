@@ -54,5 +54,22 @@ set(CMAKE_CXX_FLAGS_RELEASE "")
 # set new defaults and parse 9x specific flags
 include(${CMAKE_CURRENT_LIST_DIR}/Windows.cmake)
 
+set(_debug_flags "/Zi /Z7 /Od")
+set(_release_flags "/O2 /DNDEBUG")
+if(CL_WIN32)
+	set(_debug_flags "${_debug_flags} /MD")
+endif()
+
+set(CMAKE_C_FLAGS_DEBUG_INIT "${_debug_flags}")
+set(CMAKE_CXX_FLAGS_DEBUG_INIT "${_debug_flags}")
+
+set(CMAKE_C_FLAGS_RELEASE_INIT "${_release_flags}")
+set(CMAKE_CXX_FLAGS_RELEASE_INIT "${_release_flags}")
+
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG_INIT}")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE_INIT}")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG_INIT}")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE_INIT}")
+
 # override platform flags and link commands
 set(CMAKE_USER_MAKE_RULES_OVERRIDE ${CMAKE_CURRENT_LIST_DIR}/overrides.cmake)
