@@ -13,6 +13,14 @@ math(EXPR CL_ARGS_END "${CMAKE_ARGC} - 1")
 
 set(_found_arg_delim FALSE)
 
+set(IS_MSC FALSE)
+if(CL_VERSION_MAJOR LESS 8)
+	set(IS_MSC TRUE)
+endif()
+
+set(_object_from "")
+set(_object_to "")
+
 # cmake, -P, [this file], args...
 #   0    1      2           3...
 foreach(i RANGE 3 ${CL_ARGS_END})
@@ -28,45 +36,73 @@ foreach(i RANGE 3 ${CL_ARGS_END})
 		continue()
 	endif()
 
-	#message("${i} -> ${arg}")
-	
-	string(SUBSTRING "${arg}" 0 1 prefix1)
-	if(prefix1 STREQUAL "/" OR prefix1 STREQUAL "-")
-		string(SUBSTRING "${arg}" 0 3 prefix3)
-		if(prefix3 STREQUAL "/Fo")
+	message("[DEBUG] in:arg ${i} -> ${arg}")
+
+	if(IS_MSC)
+		if(arg STREQUAL "/nologo"
+		OR arg MATCHES "^/Fd.*")
+			continue()
+		endif()
+	endif()
+
+	string(TOUPPER "${arg}" arg_upper)
+	set(out_arg "${arg}")
+
+	# is it a switch?
+	if(arg MATCHES "^[/-]")
+		if(IS_MSC AND arg MATCHES "^/Fo")
+			# change the /Fo flag to point to a temporary dir
+			# the goal is to shorten the path so the command line will fit within 128 chars
+
 			string(LENGTH "${arg}" arg_len)
 			math(EXPR arg_len "${arg_len} - 3")
-			# skip x chars
-			string(SUBSTRING "${arg}" 3 ${arg_len} rela_object_file)
+			string(SUBSTRING "${arg}" 3 ${arg_len} object_file)
 			
-			# the object file must exist for this call to work
-			set(full_object_file "${ARG_BINDIR}/${object_file}")
-			file(TOUCH ${full_object_file})
+			get_filename_component(fname "${object_file}" NAME)
+			set(fpath "$ENV{TMP}\\${fname}")
+			file(TOUCH ${fpath})
+			message(DEBUG "[DEBUG] obj path: ${fpath}")
 
-			get_short_path("${full_object_file}" object_shortpath)
-			list(APPEND CL_ARGLIST "/Fo${object_shortpath}")
-		else()
-			list(APPEND CL_ARGLIST "${arg}")
+			set(_object_from "${object_file}")
+			set(_object_to "${fpath}")
+
+			get_short_path("${fpath}" object_shortpath)
+			set(out_arg "/Fo${object_shortpath}")
 		endif()
-	else()
+	# is it a file?
+	elseif(IS_MSC 
+		AND NOT arg MATCHES "^@"
+		AND NOT arg_upper STREQUAL "NUL.MAP"
+		# HACK to skip the link command chunks
+		AND NOT arg MATCHES ","
+		# skip libraries
+		AND NOT arg_upper MATCHES ".LIB$"
+	)
 		get_short_path("${arg}" file_shortpath)
-		list(APPEND CL_ARGLIST "${file_shortpath}")
+		set(out_arg "${file_shortpath}")
+	endif()
+	
+	message("[DEBUG] out:arg ${i} -> ${out_arg}")
+
+	if(NOT out_arg STREQUAL ",")
+		list(APPEND CL_ARGLIST "${out_arg}")
 	endif()
 endforeach()
 
-
-
-# INCLUDE and LIB variables must have backslashes
-string(REPLACE "/" "\\" env $ENV{LIB})
-set(ENV{LIB} ${env})
-string(REPLACE "/" "\\" env $ENV{INCLUDE})
-set(ENV{INCLUDE} ${env})
-
 # run CL.EXE
-message(${CL_ARGLIST})
+message(DEBUG "[DEBUG]: CL ARGS")
+list(JOIN CL_ARGLIST " " cl_args_string)
+message(DEBUG "[DEBUG]: ${cl_args_string}")
+
 execute_process(
 	COMMAND ${CL_ARGLIST}
 	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 	COMMAND_ECHO STDOUT
 	COMMAND_ERROR_IS_FATAL ANY
 )
+
+if(IS_MSC AND NOT _object_to STREQUAL "")
+	# move the object file to the final location
+	file(COPY_FILE "${_object_to}" "${_object_from}" ONLY_IF_DIFFERENT)
+	file(REMOVE "${_object_to}")
+endif()

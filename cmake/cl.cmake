@@ -6,6 +6,10 @@ if(NOT DEFINED CL_ROOT)
 	message(FATAL_ERROR "CL_ROOT not defined")
 endif()
 
+# NOTE: CMake wants forward paths here
+# otherwise you'll get:
+# Invalid character escape '\m'.
+
 set(CMAKE_C_COMPILER ${CL_ROOT}/BIN/CL.EXE)
 set(CMAKE_CXX_COMPILER ${CL_ROOT}/BIN/CL.EXE)
 set(CMAKE_LINKER ${CL_ROOT}/BIN/LINK.EXE)
@@ -21,49 +25,52 @@ set(CMAKE_CXX_COMPILER_ID_RUN TRUE)
 set(CMAKE_CXX_COMPILER_FORCED TRUE)
 set(CMAKE_CXX_COMPILER_WORKS TRUE)
 
+string(REPLACE "/" "\\" cl_root_var ${CL_ROOT})
+
 ##
 ## old CL has a PATH length limitation (probably max 256 chars)
 ## use a launcher to set a shorter PATH, as well as
 ## INCLUDE/LIB locations for standard headers and libraries
 ##
-set(CL_LAUNCHER
-	${CMAKE_COMMAND} -E env
-		PATH=$ENV{WinDir}\\System32
-		INCLUDE=${CL_ROOT}/INCLUDE
-		LIB=${CL_ROOT}/LIB
+set(CL_PATH_LIST "")
+list(APPEND CL_PATH_LIST
+	${cl_root_var}\\BIN
+	$ENV{WinDir}\\System32
 )
-if(CL_VERSION_MAJOR LESS 8)
-	# use the wrapper
-	set(CL_LAUNCHER
-		${CL_LAUNCHER} ${CMAKE_COMMAND}
-			# CMAKE_BINARY_DIR is reserved, so use our own
-			-DARG_BINDIR=${CMAKE_BINARY_DIR}
-			-P ${CMAKE_CURRENT_LIST_DIR}/compile.cmake
-			--
-	)
-	
-	set(CL_CHDIR_LAUNCHER
-		${CMAKE_COMMAND} -E chdir
-			${CL_ROOT}/BIN
-	)
+list(JOIN CL_PATH_LIST "\\\;" CL_PATH_VAR)
 
-	# and run CL.exe from the BIN directory
-	set(CL_LAUNCHER ${CL_CHDIR_LAUNCHER} ${CL_LAUNCHER})
+set(CL_INCLUDE_DIRS_LIST "")
+list(APPEND CL_INCLUDE_DIRS_LIST
+	"${cl_root_var}\\INCLUDE"
+	# **WARNING**: this assumes the Working directory is CMAKE_BINARY_DIR, where "config.h" is located
+	"."
+)
+list(JOIN CL_INCLUDE_DIRS_LIST "\\\;" CL_INCLUDE_DIRS_VAR)
 
-	# by using ntvdm
-	#set(CL_LAUNCHER ${CL_LAUNCHER} ntvdm)
+set(CL_LIB_DIRS_LIST "")
+list(APPEND CL_LIB_DIRS_LIST
+	"${cl_root_var}\\LIB"
+)
+list(JOIN CL_LIB_DIRS_LIST "\\\;" CL_LIB_DIRS_VAR)
 
-	set(CL_LAUNCHER ${CL_LAUNCHER} $ENV{WinDir}\\System32\\cmd.exe /C)
+set(CL_ENV_VARS "")
+list(APPEND CL_ENV_VARS
+	"PATH=${CL_PATH_VAR}"
+	"TMP=$ENV{WinDir}\\TEMP"
+	"INCLUDE=${CL_INCLUDE_DIRS_VAR}"
+	"LIB=${CL_LIB_DIRS_VAR}"
+)
 
-	# final launcher: <chdir> <cmake> <ntvdm>
-	# cmake runs ${CL_LAUNCHER} ${CMAKE_C_COMPILER}
-endif()
+set(CL_LAUNCHER_SETENV ${CMAKE_COMMAND} -E env "${CL_ENV_VARS}")
+set(CL_LAUNCHER ${CL_LAUNCHER_SETENV})
 
 function(cl_detect_version output_variable)
-	string(REPLACE "/" "\\" cmd "${CMAKE_C_COMPILER}")
+	string(REPLACE "/" "\\" compiler_cmd ${CMAKE_C_COMPILER})
 	execute_process(
-		COMMAND ${CL_CHDIR_LAUNCHER} cmd /C "echo yyyyy | ${cmd} /help 2>&1 1>NUL"
+		COMMAND ${CL_LAUNCHER} cmd /C "echo yyyyy | ${compiler_cmd} /help 2>&1 1>NUL"
 		OUTPUT_VARIABLE cl_stdout
+		ECHO_OUTPUT_VARIABLE
+		ECHO_ERROR_VARIABLE
 	)
 	set(ver_regex "Microsoft.*Version (.*)")
 	if(NOT cl_stdout MATCHES "${ver_regex}")
@@ -80,22 +87,53 @@ if(NOT MSVC_VERSION MATCHES "(\[0-9]+)\.(.*)")
 	message(FATAL_ERROR "Unrecognized MSVC_VERSION: ${MSVC_VERSION}")
 endif()
 
+# double-escape path separator
+string(REPLACE ";" "\\\;" CL_LAUNCHER_SETENV "${CL_LAUNCHER_SETENV}")
+set(CL_LAUNCHER ${CL_LAUNCHER_SETENV})
+
 set(CL_VERSION_MAJOR ${CMAKE_MATCH_1})
 set(CL_VERSION_MINOR ${CMAKE_MATCH_2})
 message(STATUS "CL Version: ${CL_VERSION_MAJOR}.${CL_VERSION_MINOR}")
 
+set(CL_IS_MSC FALSE)
+set(CL_SUPPORTS_WIN16 TRUE)
+
+if(CL_VERSION_MAJOR GREATER 8)
+	set(CL_SUPPORTS_WIN16 FALSE)
+endif()
+
+if(CL_VERSION_MAJOR LESS 8)
+	set(CL_IS_MSC TRUE)
+
+	# use the wrapper
+	set(CL_LAUNCHER
+		${CL_LAUNCHER} ${CMAKE_LAUNCHER}
+			# CMAKE_BINARY_DIR is reserved, so use our own
+			-DARG_BINDIR=${CMAKE_BINARY_DIR}
+			-DCL_VERSION_MAJOR=${CL_VERSION_MAJOR}
+			-P ${CMAKE_CURRENT_LIST_DIR}/compile.cmake
+			--
+	)
+endif()
+
+set(CMAKE_LAUNCHER ${CMAKE_COMMAND})
+if(CMAKE_MESSAGE_LOG_LEVEL)
+	list(APPEND CMAKE_LAUNCHER --log-level=${CMAKE_MESSAGE_LOG_LEVEL})
+endif()
 
 set(CMAKE_C_COMPILER_LAUNCHER ${CL_LAUNCHER})
 set(CMAKE_C_LINKER_LAUNCHER
 	${CL_LAUNCHER}
-		${CMAKE_COMMAND}
+		${CMAKE_LAUNCHER}
+			-DCL_ROOT=${CL_ROOT}
 			-DCL_VERSION_MAJOR=${CL_VERSION_MAJOR}
 			-P ${CMAKE_CURRENT_LIST_DIR}/link.cmake
 			--
 )
 set(CMAKE_CXX_LINKER_LAUNCHER
 	${CL_LAUNCHER}
-		${CMAKE_COMMAND}
+		${CMAKE_LAUNCHER}
+			-DCL_ROOT=${CL_ROOT}
 			-DCL_VERSION_MAJOR=${CL_VERSION_MAJOR}
 			-P ${CMAKE_CURRENT_LIST_DIR}/link.cmake
 			--

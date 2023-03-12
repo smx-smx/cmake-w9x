@@ -1,8 +1,8 @@
 function(get_short_path file output_var)
-	get_filename_component(full_path "${file}" ABSOLUTE)
-	string(REPLACE "/" "\\" full_path "${full_path}")
+	string(REPLACE "/" "\\" path "${file}")
+
 	execute_process(
-		COMMAND cmd /C "for %A in (${full_path}) do @echo %~sA"
+		COMMAND cmd /C ${CMAKE_CURRENT_LIST_DIR}\\get_short_path.bat "${path}"
 		OUTPUT_VARIABLE short_path
 	)
 	string(STRIP "${short_path}" short_path)

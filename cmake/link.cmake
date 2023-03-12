@@ -5,10 +5,22 @@
 ## 
 include(${CMAKE_CURRENT_LIST_DIR}/common.cmake)
 
+set(IS_MSC FALSE)
+if(CL_VERSION_MAJOR LESS 8)
+	set(IS_MSC TRUE)
+endif()
+
 # collects LINK.exe arguments
 set(LINK_ARGLIST "")
 
 set(_found_arg_delim FALSE)
+
+set(_rsp_buffer "")
+set(_has_map FALSE)
+
+set(_has_libs FALSE)
+
+set(_has_libw FALSE)
 
 math(EXPR LINK_ARGS_END "${CMAKE_ARGC} - 1")
 # cmake, -P, [this file], args...
@@ -17,8 +29,7 @@ foreach(i RANGE 3 ${LINK_ARGS_END})
 	set(var "CMAKE_ARGV${i}")
 	set(arg "${${var}}")
 
-
-	# loop until arg delim
+	# loop until arg delim (skip CMake arguments)
 	if(NOT _found_arg_delim)
 		if(arg STREQUAL "--")
 			set(_found_arg_delim TRUE)
@@ -27,29 +38,166 @@ foreach(i RANGE 3 ${LINK_ARGS_END})
 		continue()
 	endif()
 
-	list(APPEND LINK_ARGLIST "${arg}")
+	if(IS_MSC)
+		# skip unsupported flags
+		if(arg STREQUAL "/debug"
+		OR arg MATCHES "^/INCREMENTAL:")
+			continue()
+		endif()
+	endif()
 
-	#message("${i} -> ${arg}")
-	
-	string(SUBSTRING "${arg}" 0 1 first_ch)
-	# patch the RSP file to have backslashes
-	if(first_ch STREQUAL "@")
+	# create an uppercase copy of the argument, for later checks
+	string(TOUPPER "${arg}" arg_upper)
+
+	message("[DEBUG] in:arg ${i} -> ${arg}")
+
+	# $HACK: if the argument contains "LIBW", assume we're targeting Windows
+	if(arg_upper MATCHES "LIBW")
+		set(_has_libw TRUE)
+	endif()
+
+	# the resulting argument is the input argument
+	# (unless the code below changes it)
+	set(out_arg "${arg}")
+
+	# if it's an RSP file, patch its content to have backslashes
+	if(arg MATCHES "^@")
+		# read RSP contents and convert to backslashes
 		string(LENGTH "${arg}" arg_len)
 		math(EXPR arg_len "${arg_len} - 1")
 		string(SUBSTRING "${arg}" 1 ${arg_len} rsp_file)
 		file(READ "${rsp_file}" rsp_data)
 		string(REPLACE "/" "\\" rsp_data "${rsp_data}")
-		file(WRITE "${rsp_file}" "${rsp_data}")
+
+		if(IS_MSC)
+			# if it's MSC, relocate the file to the temporary directory to shorten the command line
+			get_filename_component(fname "${rsp_file}" NAME)
+			set(fpath "$ENV{TMP}\\${fname}")
+			message(DEBUG "[DEBUG] rsp path: ${fpath}")
+			set(rsp_file "${fpath}")
+
+			string(APPEND _rsp_buffer "${rsp_data}")
+		endif()
+
+		# write the new contents
+		file(WRITE "${rsp_file}" "${rsp_data} ")
+
+		set(out_arg "@${rsp_file}")
+	elseif(arg MATCHES "^/MAP:")
+		# if it's a MAP file, convert the file path to have backslashes
+		string(LENGTH "${arg}" arg_len)
+		math(EXPR arg_len "${arg_len} - 5")
+		string(SUBSTRING "${arg}" 5 ${arg_len} map_file)
+		string(REPLACE "/" "\\" map_file "${map_file}")
+
+		set(out_arg "/MAP:${map_file}")
+	elseif(arg_upper MATCHES "\\.LIB$")
+		# keep .LIB files as is (upper-casing here is optional but "canonical")
+		set(out_arg "${arg_upper}")
+	elseif(arg_upper MATCHES "\\.DEF$")
+		# the link rule cannot be made dynamic (unless we make 2 different toolchain files)
+		# however, we shouldn't use a DEF file when building a DOS binary
+		if(_has_libw)
+			# use the .def file (Windows)
+			set(out_arg "${arg_upper}")
+		else()
+			# don't use .def file (DOS)
+			set(out_arg "NUL.DEF")
+		endif()
+	else()
+		if(arg MATCHES "^[/-]")
+			# it's a switch, keep as-is
+		else()
+			# we assume it's a file path, adjust slashes
+			string(REPLACE "/" "\\" out_arg "${arg}")
+		endif()
 	endif()
+
+	message("[DEBUG] out:arg ${i} -> ${out_arg}")
+	list(APPEND LINK_ARGLIST "${out_arg}")
+
+	if(NOT out_arg MATCHES "LINK.*\\.EXE$"
+	AND NOT out_arg MATCHES "^/MAP:"
+	)
+		# LIB files are written on the same line in the RSP file
+		# when we see the first non-LIB argument, we need to check if we need to insert a line break
+		if(NOT out_arg MATCHES "\\.LIB$")
+			string(LENGTH "${_rsp_buffer}" _buf_length)
+
+			# if the RSP file is not empty
+			if(_buf_length GREATER 0)
+				# check if the last inserted character is a newline
+				math(EXPR last_char_index "${_buf_length} - 1")
+				string(SUBSTRING "${_rsp_buffer}" ${last_char_index} 1 last_char)
+				if(NOT last_char STREQUAL "\n")
+					# add line break
+					string(APPEND _rsp_buffer "\n")
+				endif()
+			endif()
+		endif()
+
+		string(APPEND _rsp_buffer "${out_arg}")
+		if(out_arg MATCHES "\\.LIB$")
+			# if we just wrote a LIB file, stay on the same line and add a space
+			string(APPEND _rsp_buffer " ")
+		else()
+			# else insert a line break
+			string(APPEND _rsp_buffer "\n")
+		endif()
+	endif()
+
+	# message(DEBUG "==== CURRENT BUFFER: ${_rsp_buffer}")
 endforeach()
 
-# INCLUDE and LIB variables must have backslashes
-string(REPLACE "/" "\\" env $ENV{LIB})
-set(ENV{LIB} ${env})
-string(REPLACE "/" "\\" env $ENV{INCLUDE})
-set(ENV{INCLUDE} ${env})
-
 # run LINK.EXE
+message(DEBUG "[DEBUG]: LINK ARGS")
+list(JOIN LINK_ARGLIST " " link_args_string)
+message(DEBUG "[DEBUG]: ${link_args_string}")
+
+message(DEBUG "[DEBUG]: rsp buffer: ${_rsp_buffer}")
+if(IS_MSC)
+	#string(TIMESTAMP rsp_stamp "%H%M%S")
+	#set(tmp_rsp "$ENV{TMP}\\LINK_${rsp_stamp}.RSP")
+	
+	# the LNK file must be encoded as a short filename
+	# however, using "get_short_path" will convert it to an absolute path ($BUG), which will make
+	# the filename even longer
+	# For now, we generate a filename using the seconds parts of the time
+	# *NOTE*: the intent of this is mostly for debugging purposes,
+	# and to avoid 2 separate targets using the same RSP.
+	# this WILL break when using parallel builds, so it's not a definitive fix
+	string(TIMESTAMP rsp_stamp "%S")
+	set(tmp_rsp "LNK_${rsp_stamp}.RSP")
+	#get_short_path("${tmp_rsp}" tmp_rsp)
+
+	string(STRIP "${_rsp_buffer}" _rsp_buffer)
+	string(APPEND _rsp_buffer "/NOD\n")
+
+	# write the final "flat" RSP file data
+	# a "flat" file is a file that doesn't contain other response files as arguments
+	file(WRITE "${tmp_rsp}" "${_rsp_buffer}")
+
+	# retrieve the LINK.EXE path from the first argument
+	list(GET LINK_ARGLIST 0 LINK_EXE)
+	
+	# if we are targeting Windows, we must use LINK4.EXE
+	if(_has_libw)
+		# keep the Linker path, but change the filename to LINK4.EXE
+		get_filename_component(_linker_dir "${LINK_EXE}" DIRECTORY)
+		set(LINK_EXE "${_linker_dir}/LINK4.EXE")
+		if(NOT EXISTS ${LINK_EXE})
+			message(FATAL_ERROR "LINK4 is required, but ${LINK_EXE} could not be found")
+		endif()
+	endif()
+	
+	# construct the new command line
+	set(LINK_ARGLIST "")
+	list(APPEND LINK_ARGLIST ${LINK_EXE} "@${tmp_rsp}")
+
+	list(JOIN LINK_ARGLIST " " link_args_string)
+	message(DEBUG "[DEBUG] args string: ${link_args_string}")
+endif()
+
 execute_process(
 	COMMAND ${LINK_ARGLIST}
 	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
