@@ -204,3 +204,7 @@ execute_process(
 	COMMAND_ECHO STDOUT
 	COMMAND_ERROR_IS_FATAL ANY
 )
+
+if(IS_MSC)
+	file(REMOVE "${tmp_rsp}")
+endif()

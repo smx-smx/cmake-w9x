@@ -28,6 +28,118 @@ define_property(
 	PROPERTY MSVC_DEFFILE
 )
 
+function(msvc_add_targets)
+	cmake_parse_arguments(tgt "WITH_QUICKWIN;WITHOUT_QUICKWIN;WITHOUT_WINDOWS" "DEF_FILE;TARGET_NAME" "SOURCES" ${ARGN})
+
+	set(_target_name ${tgt_TARGET_NAME})
+	add_custom_target(${_target_name})
+
+	set(_dos_target d_${_target_name})
+	
+	# we always have at least a Windows target (1.x, 3.x, Win32)
+
+	if(tgt_WITH_QUICKWIN)
+		set(_win_target wq_${_target_name})
+	else()
+		set(_win_target w_${_target_name})
+	endif()
+
+	if(NOT tgt_WITHOUT_WINDOWS)
+		add_executable(${_win_target} ${tgt_SOURCES})
+	endif()
+
+	if(tgt_WITH_QUICKWIN AND tgt_WITHOUT_QUICKWIN)
+		set(_win_target2 w_${_target_name})
+		add_executable(${_win_target2} ${tgt_SOURCES})
+	endif()
+
+	if(CL_IS_MSC OR CL_SUPPORTS_WIN16)
+		add_executable(${_dos_target} ${tgt_SOURCES})
+	endif()
+
+	if(CL_IS_MSC)
+		## NOTE: MSC4 doesn't support C++
+		# available targets: DOS, Windows 1.x
+		set_target_properties(${_dos_target} PROPERTIES
+			MSVC_PLATFORM DOS
+			MSVC_MMODEL SMALL
+		)
+		
+		if(TARGET ${_win_target})
+			set_target_properties(${_win_target} PROPERTIES
+				MSVC_PLATFORM WIN16
+				MSVC_OS WIN1
+				MSVC_MMODEL SMALL
+			)
+		endif()
+	elseif(CL_SUPPORTS_WIN16)
+		# available targets: DOS, Windows 3.x
+		set_target_properties(${_dos_target} PROPERTIES
+			MSVC_PLATFORM DOS
+			MSVC_MMODEL SMALL
+		)
+
+		if(TARGET ${_win_target})
+			set_target_properties(${_win_target} PROPERTIES
+				MSVC_PLATFORM WIN16
+				MSVC_MMODEL LARGE
+			)
+		endif()
+		if(TARGET ${_win_target2})
+			set_target_properties(${_win_target2} PROPERTIES
+				MSVC_PLATFORM WIN16
+				MSVC_MMODEL LARGE
+			)
+		endif()
+	else()
+		if(TARGET ${_win_target})
+			# available targets: Windows 9x, Windows NT
+			set_target_properties(${_win_target} PROPERTIES
+				WIN32_EXECUTABLE ON
+				MSVC_PLATFORM WIN32
+				MSVC_SUBSYSTEM windows
+			)
+		endif()
+	endif()
+
+	# set a def file if provided
+	# NOTE: not passing it will typically break Windows 1.0
+	if(tgt_DEF_FILE)
+		if(TARGET ${_win_target})
+			set_target_properties(${_win_target} PROPERTIES
+				MSVC_DEFFILE ${tgt_DEF_FILE}
+			)
+		endif()
+		if(TARGET ${_win_target2})
+			set_target_properties(${_win_target2} PROPERTIES
+				MSVC_DEFFILE ${tgt_DEF_FILE}
+			)
+		endif()
+	endif()
+
+	# use QuickWin C library if the target requires it
+	if(tgt_WITH_QUICKWIN)
+		set_target_properties(${_win_target} PROPERTIES
+			MSVC_QUICKWIN ON
+		)
+	endif()
+
+	if(TARGET ${_dos_target})
+		setup_msvc_target(${_dos_target})
+		add_dependencies(${_target_name} ${_dos_target})
+	endif()
+	
+	if(TARGET ${_win_target})
+		setup_msvc_target(${_win_target})
+		add_dependencies(${_target_name} ${_win_target})
+	endif()
+
+	if(TARGET ${_win_target2})
+		setup_msvc_target(${_win_target2})
+		add_dependencies(${_target_name} ${_win_target2})
+	endif()
+endfunction()
+
 function(setup_msvc_target target)
 	get_target_property(_quickwin ${target} MSVC_QUICKWIN)
 	get_target_property(_platform ${target} MSVC_PLATFORM)
@@ -38,9 +150,6 @@ function(setup_msvc_target target)
 	get_target_property(_target_type ${target} TYPE)
 	get_target_property(_os ${target} MSVC_OS)
 
-	if(_os STREQUAL "_os-NOTFOUND")
-		set(_os "WIN32")
-	endif()
 	if(_quickwin STREQUAL "_quickwin-NOTFOUND")
 		set(_quickwin ${CL_QUICKWIN})
 	endif()

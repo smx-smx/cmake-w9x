@@ -30,12 +30,13 @@ if(CL_VERSION_MAJOR LESS 9)
 	# LINK
 	# LINK @<response file>
 	# LINK <objs>,<exefile>,<mapfile>,<libs>,<deffile>
-	set(_linker_args_exe "<TARGET>,,<LINK_LIBRARIES>,<TARGET>.def,${CMAKE_END_TEMP_FILE}")
-	set(_linker_args_shlib "<TARGET>,,<LINK_LIBRARIES>,<TARGET>.def,${CMAKE_END_TEMP_FILE}")
+	# NOTE: this command line is parsed by "link.cmake" to generate the RSP (hence the spaces)
+	set(_linker_args_exe "<TARGET>,,<LINK_LIBRARIES>, <TARGET>.def ,${CMAKE_END_TEMP_FILE}")
+	set(_linker_args_shlib "<TARGET>,,<LINK_LIBRARIES>, <TARGET>.def ,${CMAKE_END_TEMP_FILE}")
 	
 	if(CL_VERSION_MAJOR LESS 8)
 		# add ListFile: NUL.MAP ($FIXME: make it configurable)
-		# NOTE: this command line is parsed by "link.cmake" to generate the RSP
+		# NOTE: this command line is parsed by "link.cmake" to generate the RSP (hence the spaces)
 		set(_linker_args_exe "<TARGET> , NUL.MAP , <LINK_LIBRARIES> , <TARGET>.def , ${CMAKE_END_TEMP_FILE}")
 	endif()
 
