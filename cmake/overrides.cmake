@@ -3,6 +3,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY_DEFAULT "")
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
+set(CMAKE_C_CREATE_CONSOLE_EXE "")
+set(CMAKE_CXX_CREATE_CONSOLE_EXE "")
+set(CMAKE_CXX_CREATE_WIN32_EXE "")
+set(CMAKE_C_CREATE_WIN32_EXE "")
+
 if(CL_VERSION_MAJOR LESS 8)
 	# needed for MSC 4. we will generate a flat .rsp ourselves
 	# this is because CMake can only use response files for certain parts
