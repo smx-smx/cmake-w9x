@@ -10,9 +10,16 @@ endif()
 # otherwise you'll get:
 # Invalid character escape '\m'.
 
-set(CMAKE_C_COMPILER ${CL_ROOT}/BIN/CL.EXE)
-set(CMAKE_CXX_COMPILER ${CL_ROOT}/BIN/CL.EXE)
-set(CMAKE_LINKER ${CL_ROOT}/BIN/LINK.EXE)
+if(NOT DEFINED CL_EXECUTABLE)
+	set(CL_EXECUTABLE ${CL_ROOT}/BIN/CL.EXE)
+endif()
+if(NOT DEFINED LINK_EXECUTABLE)
+	set(LINK_EXECUTABLE ${CL_ROOT}/BIN/LINK.EXE)
+endif()
+
+set(CMAKE_C_COMPILER ${CL_EXECUTABLE})
+set(CMAKE_CXX_COMPILER ${CL_EXECUTABLE})
+set(CMAKE_LINKER ${LINK_EXECUTABLE})
 
 # force all compiler checks
 set(CMAKE_C_COMPILER_ID MSVC)
@@ -57,9 +64,13 @@ set(CL_ENV_VARS "")
 list(APPEND CL_ENV_VARS
 	"PATH=${CL_PATH_VAR}"
 	"TMP=$ENV{WinDir}\\TEMP"
-	"INCLUDE=${CL_INCLUDE_DIRS_VAR}"
-	"LIB=${CL_LIB_DIRS_VAR}"
 )
+if(NOT CL_NO_DEFAULT_INCLUDES)
+	list(APPEND CL_ENV_VARS	"INCLUDE=${CL_INCLUDE_DIRS_VAR}")
+endif()
+if(NOT CL_NO_DEFAULT_LIBS)
+	list(APPEND CL_ENV_VARS	"LIB=${CL_LIB_DIRS_VAR}")
+endif()
 
 set(CL_LAUNCHER_SETENV ${CMAKE_COMMAND} -E env "${CL_ENV_VARS}")
 set(CL_LAUNCHER ${CL_LAUNCHER_SETENV})
@@ -178,9 +189,17 @@ if(DEFINED _target_cpu)
 	set(_common_flags "${_common_flags} /G${_cpu_gen}")
 endif()
 
-set(_debug_flags "${_common_flags} /Od /Zi")
-if(CL_VERSION_MAJOR GREATER_EQUAL 8)
-	set(_debug_flags "${_debug_flags} /Z7")
+set(_debug_flags "${_common_flags} /Od")
+if(DEFINED CMAKE_MSVC_DEBUG_INFORMATION_FORMAT)
+	if(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT STREQUAL Embedded)
+		if(CL_VERSION_MAJOR GREATER_EQUAL 8)
+			set(_debug_flags "${_debug_flags} /Z7")
+		endif()
+	elseif(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT STREQUAL ProgramDatabase)
+		set(_debug_flags "${_debug_flags} /Zi")
+	else()
+		message(FATAL_ERROR "Unsupported CMAKE_MSVC_DEBUG_INFORMATION_FORMAT ${CMAKE_MSVC_DEBUG_INFORMATION_FORMAT}")
+	endif()
 endif()
 
 set(_release_flags "${_common_flags} /O2 /DNDEBUG")
